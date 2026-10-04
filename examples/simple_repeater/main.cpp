@@ -204,4 +204,5 @@ void loop() {
     }
 #endif
   }
+  board.idle(the_mesh.millisUntilDue(BOARD_IDLE_MAX_MILLIS));
 }

@@ -157,4 +157,5 @@ void loop() {
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.loop();
 #endif
+  board.idle(the_mesh.millisUntilDue(BOARD_IDLE_MAX_MILLIS));
 }

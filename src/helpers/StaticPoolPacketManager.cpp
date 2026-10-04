@@ -8,6 +8,19 @@ PacketQueue::PacketQueue(int max_entries) {
   _num = 0;
 }
 
+// The earliest entry's schedule: of all of them ('any'), or of those after 'now'.
+bool PacketQueue::earliestAfter(uint32_t now, bool any, uint32_t& at) const {
+  bool found = false;
+  for (int j = 0; j < _num; j++) {
+    if (!any && (int32_t)(_schedule_table[j] - now) <= 0) continue;
+    if (!found || (int32_t)(_schedule_table[j] - at) < 0) {
+      at = _schedule_table[j];
+      found = true;
+    }
+  }
+  return found;
+}
+
 int PacketQueue::countBefore(uint32_t now) const {
   if (now == 0xFFFFFFFF) return _num;  // sentinel: count all entries regardless of schedule
 
@@ -97,6 +110,14 @@ mesh::Packet* StaticPoolPacketManager::getNextOutbound(uint32_t now) {
 
 int  StaticPoolPacketManager::getOutboundCount(uint32_t now) const {
   return send_queue.countBefore(now);
+}
+
+bool StaticPoolPacketManager::getNextOutboundAfter(uint32_t now, uint32_t& at) const {
+  return send_queue.earliestAfter(now, false, at);
+}
+
+bool StaticPoolPacketManager::getNextInboundAt(uint32_t& at) const {
+  return rx_queue.earliestAfter(0, true, at);
 }
 
 int  StaticPoolPacketManager::getOutboundTotal() const {

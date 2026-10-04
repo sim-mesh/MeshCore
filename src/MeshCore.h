@@ -22,6 +22,10 @@
 #define MAX_PATH_SIZE        64
 #define MAX_TRANS_UNIT      255
 
+#ifndef BOARD_IDLE_MAX_MILLIS
+  #define BOARD_IDLE_MAX_MILLIS  5000   // the longest MainBoard::idle() between main loops, with nothing due
+#endif
+
 #if MESH_DEBUG && ARDUINO
   #include <Arduino.h>
   #define MESH_DEBUG_PRINT(F, ...) Serial.printf("DEBUG: " F, ##__VA_ARGS__)
@@ -59,6 +63,12 @@ public:
   virtual void onBootComplete() { /* no op */ }
   virtual uint32_t getIRQGpio() { return -1; } // not supported. Returns DIO1 (SX1262) and DIO0 (SX127x)
   virtual void sleep(uint32_t secs)  { /* no op */ }
+  // Called at the end of every main loop, whatever is pending, with how long
+  // until something is due (Dispatcher::millisUntilDue()): wait at most max_ms,
+  // or until an interrupt (the radio, a serial port) ends the wait. Unlike
+  // sleep(), it also runs while a packet is queued for a later instant, so a
+  // board may idle its core between loops all the time.
+  virtual void idle(uint32_t max_ms) { /* no op */ }
   virtual uint32_t getGpio() { return 0; }
   virtual void setGpio(uint32_t values) {}
   virtual uint8_t getStartupReason() const = 0;

@@ -9,6 +9,7 @@
 #define STATE_INT_READY 16
 
 #define NUM_NOISE_FLOOR_SAMPLES  64
+#define SAMPLE_RETRY_MILLIS      20
 #define SAMPLING_THRESHOLD  14
 
 static volatile uint8_t state = STATE_IDLE;
@@ -41,6 +42,7 @@ void RadioLibWrapper::begin() {
   // start average out some samples
   _num_floor_samples = 0;
   _floor_sample_sum = 0;
+  _sample_refused = false;
 }
 
 uint32_t RadioLibWrapper::getRngSeed() {
@@ -86,11 +88,13 @@ void RadioLibWrapper::resetAGC() {
 
 void RadioLibWrapper::loop() {
   if (state == STATE_RX && _num_floor_samples < NUM_NOISE_FLOOR_SAMPLES) {
+    _sample_refused = true;
     if (!isReceivingPacket()) {
       int rssi = getCurrentRSSI();
       if (rssi < _noise_floor + SAMPLING_THRESHOLD) {  // only consider samples below current floor + sampling THRESHOLD
         _num_floor_samples++;
         _floor_sample_sum += rssi;
+        _sample_refused = false;
       }
     }
   } else if (_num_floor_samples >= NUM_NOISE_FLOOR_SAMPLES && _floor_sample_sum != 0) {
@@ -104,6 +108,16 @@ void RadioLibWrapper::loop() {
     MESH_DEBUG_PRINTLN("RadioLibWrapper: noise_floor = %d", (int)_noise_floor);
     #endif
   }
+}
+
+// Noise-floor samples are taken one a loop, back to back as the loop runs. One refused while the
+// channel is busy is tried again a little later rather than at once.
+int RadioLibWrapper::pollMillis() const {
+  if (_num_floor_samples >= NUM_NOISE_FLOOR_SAMPLES) {
+    return _floor_sample_sum != 0 ? 0 : -1;    // a finished set still to be averaged: next loop
+  }
+  if (state != STATE_RX) return -1;            // sampling goes on once receiving again
+  return _sample_refused ? SAMPLE_RETRY_MILLIS : 0;
 }
 
 void RadioLibWrapper::startRecv() {
@@ -135,8 +149,7 @@ int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
         n_recv_errors++;
       } else {
       //  Serial.print("  readData() -> "); Serial.println(len);
-        n_recv++;
-      }
+        n_recv++;      }
     }
     #if defined(USE_LR2021)
     state = STATE_RX;     // LR2021 stays in Rx after readData, calling startReceive while still in Rx throws -706 errors

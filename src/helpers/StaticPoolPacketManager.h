@@ -14,6 +14,7 @@ public:
   bool add(mesh::Packet* packet, uint8_t priority, uint32_t scheduled_for);
   int count() const { return _num; }
   int countBefore(uint32_t now) const;
+  bool earliestAfter(uint32_t now, bool any, uint32_t& at) const;
   mesh::Packet* itemAt(int i) const { return _table[i]; }
   mesh::Packet* removeByIdx(int i);
 };
@@ -35,4 +36,6 @@ public:
   mesh::Packet* removeOutboundByIdx(int i) override;
   void queueInbound(mesh::Packet* packet, uint32_t scheduled_for) override;
   mesh::Packet* getNextInbound(uint32_t now) override;
+  bool getNextOutboundAfter(uint32_t now, uint32_t& at) const override;
+  bool getNextInboundAt(uint32_t& at) const override;
 };

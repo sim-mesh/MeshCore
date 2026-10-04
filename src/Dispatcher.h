@@ -72,6 +72,12 @@ public:
   virtual bool isInRecvMode() const = 0;
 
   /**
+   * \returns  how soon loop() has work of its own that no interrupt announces, in milliseconds
+   *           (0: the next loop), or -1 when it has none.
+   */
+  virtual int pollMillis() const { return -1; }
+
+  /**
    * \returns  true if the radio is currently mid-receive of a packet.
   */
   virtual bool isReceiving() { return false; }
@@ -98,6 +104,17 @@ public:
   virtual Packet* removeOutboundByIdx(int i) = 0;
   virtual void queueInbound(Packet* packet, uint32_t scheduled_for) = 0;
   virtual Packet* getNextInbound(uint32_t now) = 0;
+
+  /**
+   * \returns  true, with 'at' the earliest instant after 'now' an outbound packet is scheduled for,
+   *           when there is one.
+   */
+  virtual bool getNextOutboundAfter(uint32_t now, uint32_t& at) const { return false; }
+  /**
+   * \returns  true, with 'at' the earliest instant an inbound packet is scheduled for, when one is
+   *           queued.
+   */
+  virtual bool getNextInboundAt(uint32_t& at) const { return false; }
 };
 
 typedef uint32_t  DispatcherAction;
@@ -128,9 +145,12 @@ class Dispatcher {
   unsigned long tx_budget_ms;
   unsigned long last_budget_update;
   unsigned long duty_cycle_window_ms;
+  mutable unsigned long due_at;   // the earliest future instant a timer was checked against or set to
+  mutable bool due_set;
 
   void processRecvPacket(Packet* pkt);
   void updateTxBudget();
+  void noteDue(unsigned long at) const;
 
 protected:
   PacketManager* _mgr;
@@ -152,6 +172,8 @@ protected:
     tx_budget_ms = 0;
     last_budget_update = 0;
     duty_cycle_window_ms = 3600000;
+    due_at = 0;
+    due_set = false;
   }
 
   virtual DispatcherAction onRecvPacket(Packet* pkt) = 0;
@@ -195,6 +217,14 @@ public:
   // helper methods
   bool millisHasNowPassed(unsigned long timestamp) const;
   unsigned long futureMillis(int millis_from_now) const;
+
+  /**
+   * \brief  How long the main loop may idle (MainBoard::idle()) before something is due: the
+   *         earliest timer checked (millisHasNowPassed) or set (futureMillis) since the last call,
+   *         the queued packets' schedule and the radio's polling, at most 'max_millis'.
+   *         Called once at the end of each main loop, after every timer has been checked.
+   */
+  unsigned long millisUntilDue(unsigned long max_millis);
 
   bool tryParsePacket(Packet* pkt, const uint8_t* raw, int len);
 

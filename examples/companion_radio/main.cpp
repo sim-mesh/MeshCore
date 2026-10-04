@@ -271,4 +271,5 @@ void loop() {
     last_wifi_reconnect_attempt = millis();
   }
 #endif
+  board.idle(the_mesh.millisUntilDue(BOARD_IDLE_MAX_MILLIS));
 }

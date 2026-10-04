@@ -20,6 +20,7 @@ protected:
   bool _cad_enabled;
   uint16_t _num_floor_samples;
   int32_t _floor_sample_sum;
+  bool _sample_refused;     // the last noise-floor sample was not taken: the channel was busy
   uint8_t _preamble_sf;
 
   void idle();
@@ -64,6 +65,7 @@ public:
   void resetAGC() override;
 
   void loop() override;
+  int pollMillis() const override;
 
   uint32_t getPacketsRecv() const { return n_recv; }
   uint32_t getPacketsRecvErrors() const { return n_recv_errors; }

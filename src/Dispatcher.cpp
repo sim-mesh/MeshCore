@@ -380,11 +380,46 @@ void Dispatcher::sendPacket(Packet* packet, uint8_t priority, uint32_t delay_mil
 // Utility function -- handles the case where millis() wraps around back to zero
 //   2's complement arithmetic will handle any unsigned subtraction up to HALF the word size (32-bits in this case)
 bool Dispatcher::millisHasNowPassed(unsigned long timestamp) const {
-  return (long)(_ms->getMillis() - timestamp) > 0;
+  bool passed = (long)(_ms->getMillis() - timestamp) > 0;
+  if (!passed) noteDue(timestamp + 1);    // the first instant it has passed
+  return passed;
 }
 
 unsigned long Dispatcher::futureMillis(int millis_from_now) const {
-  return _ms->getMillis() + millis_from_now;
+  unsigned long at = _ms->getMillis() + millis_from_now;
+  noteDue(at);
+  return at;
+}
+
+void Dispatcher::noteDue(unsigned long at) const {
+  if (!due_set || (long)(at - due_at) < 0) {
+    due_at = at;
+    due_set = true;
+  }
+}
+
+unsigned long Dispatcher::millisUntilDue(unsigned long max_millis) {
+  unsigned long now = _ms->getMillis();
+  uint32_t queued_at;
+  // A packet already due to go waits on something checkSend() noted (the next transmit slot, the
+  // budget, a busy channel) or on the send in progress, whose end is an interrupt.
+  if (_mgr->getNextOutboundAfter(now, queued_at)) noteDue(queued_at);
+  // Inbound packets are taken one a loop, and not while a send is in progress.
+  if (outbound == NULL && _mgr->getNextInboundAt(queued_at)) noteDue(queued_at);
+  int poll = _radio->pollMillis();
+  if (poll >= 0) noteDue(now + poll);
+
+  unsigned long wait = max_millis;
+  if (due_set) {
+    long until = (long)(due_at - now);
+    if (until <= 0) {
+      wait = 0;
+    } else if ((unsigned long)until < wait) {
+      wait = until;
+    }
+  }
+  due_set = false;
+  return wait;
 }
 
 }
