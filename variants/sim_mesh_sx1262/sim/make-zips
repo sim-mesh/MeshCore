@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """The three MeshCore firmwares for sim-mesh, as firmware zips.
 
-    variants/sim_mesh_sx1262/sim/make-zips [--out DIR] [--no-build] [ROLE ...]
+    variants/sim_mesh_sx1262/sim/make-zips [--out DIR] [--no-build] [--arch ARCH] [ROLE ...]
 
 ROLE is companion, repeater or room (all three without). Run from the
 repository's root with PlatformIO on PATH and pip in the Python running it.
-Each build is `pio run -e sim_mesh_sx1262_<role>`; its program must load
-nothing beyond the C library, the C++ runtime and sim-mesh's radio (checked
-with ldd). Each zip is `<base>_<arch>_<UTC stamp>.zip` in DIR (default
-.pio/sim-zips), holding node.yaml, the program and driver.py; the
-companion's also holds host.py and pylib/, meshcore-cli and meshcore_py with
-their dependencies for CPython 3.12, checked by importing meshcore-cli from
-pylib alone.
+Every role is built for both aarch64 and x86_64 (--arch: one of them): the
+machine's own natively in .pio/build, the other with its cross g++
+(g++-<arch>-linux-gnu, and its libc from the multiarch packages) in
+.pio/build.linux-<arch>, SIM_MESH_ARCH telling sim-mesh's cross.py and
+link.py which. Each build is `pio run -e sim_mesh_sx1262_<role>`; its
+program must need nothing beyond the C library, the C++ runtime and
+sim-mesh's radio (checked with readelf). Each zip is
+`<base>_<arch>_<UTC stamp>.zip` in DIR (default .pio/sim-zips), holding
+node.yaml, the program and driver.py; the companion's also holds host.py and
+pylib/, meshcore-cli and meshcore_py with their dependencies for CPython
+3.12, checked, for the machine's own architecture, by importing meshcore-cli
+from pylib alone.
 """
 
 import argparse
@@ -27,8 +32,8 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
-RADIO_BUILD = os.path.normpath(os.path.join(ROOT, "..", "sim-mesh", "radio", "build"))
-ALLOWED = re.compile(r"^(linux-vdso|libc|libm|libstdc\+\+|libgcc_s|ld-linux[-\w]*|libsimradio-[\w-]+)\.so")
+ALLOWED = re.compile(r"^(libc|libm|libstdc\+\+|libgcc_s|ld-linux[-\w]*|libsimradio-[\w-]+)\.so")
+ARCHES = ("aarch64", "x86_64")
 
 ROLES = {
     "companion": ("meshcore-companion-sx1262", "MeshCore companion (meshcore-cli)"),
@@ -48,14 +53,13 @@ def run(argv, **kwargs):
     subprocess.run(argv, check=True, **kwargs)
 
 
-def check_ldd(program):
-    env = dict(os.environ, LD_LIBRARY_PATH=RADIO_BUILD)
-    out = subprocess.run(["ldd", program], env=env, check=True, capture_output=True,
+def check_needed(program):
+    out = subprocess.run(["readelf", "-d", program], check=True, capture_output=True,
                          text=True).stdout
-    loaded = [line.split()[0] for line in out.splitlines() if line.strip()]
-    stray = [lib for lib in loaded if not ALLOWED.match(os.path.basename(lib))]
+    needed = re.findall(r"\(NEEDED\)\s+Shared library: \[([^\]]+)\]", out)
+    stray = [lib for lib in needed if not ALLOWED.match(lib)]
     if stray:
-        sys.exit("%s loads %s, which sim-mesh does not provide" % (program, ", ".join(stray)))
+        sys.exit("%s needs %s, which sim-mesh does not provide" % (program, ", ".join(stray)))
 
 
 def fill_pylib(target, arch):
@@ -65,6 +69,8 @@ def fill_pylib(target, arch):
     for junk in os.listdir(target):
         if junk == "bin":
             shutil.rmtree(os.path.join(target, junk))
+    if arch != platform.machine():
+        return
     probe = "import meshcore_cli.meshcore_cli, meshcore, prompt_toolkit"
     run(["/usr/bin/python3", "-S", "-c", probe], env={"PYTHONPATH": target, "PATH": "/usr/bin"})
 
@@ -89,10 +95,13 @@ def node_yaml(role, base, arch, stamp):
 def make(role, out_dir, stamp, arch, build):
     base = ROLES[role][0]
     env_name = "sim_mesh_sx1262_%s" % role
+    build_dir = os.path.join(ROOT, ".pio", "build" if arch == platform.machine()
+                             else "build.linux-%s" % arch)
     if build:
-        run(["pio", "run", "-e", env_name], cwd=ROOT)
-    program = os.path.join(ROOT, ".pio", "build", env_name, "program")
-    check_ldd(program)
+        run(["pio", "run", "-e", env_name], cwd=ROOT,
+            env=dict(os.environ, SIM_MESH_ARCH=arch, PLATFORMIO_BUILD_DIR=build_dir))
+    program = os.path.join(build_dir, env_name, "program")
+    check_needed(program)
 
     name = "%s_%s_%s" % (base, arch, stamp)
     with tempfile.TemporaryDirectory() as tmp:
@@ -120,6 +129,7 @@ def main():
     parser.add_argument("roles", nargs="*", metavar="ROLE", help="companion, repeater, room")
     parser.add_argument("--out", default=os.path.join(ROOT, ".pio", "sim-zips"))
     parser.add_argument("--no-build", action="store_true", help="zip what is built already")
+    parser.add_argument("--arch", choices=ARCHES, help="this architecture only")
     args = parser.parse_args()
     roles = args.roles or ["repeater", "room", "companion"]
     for role in roles:
@@ -127,9 +137,9 @@ def main():
             parser.error("no role %r (there are %s)" % (role, ", ".join(sorted(ROLES))))
     os.makedirs(args.out, exist_ok=True)
     stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime())
-    arch = platform.machine()
-    for role in roles:
-        make(role, args.out, stamp, arch, not args.no_build)
+    for arch in [args.arch] if args.arch else ARCHES:
+        for role in roles:
+            make(role, args.out, stamp, arch, not args.no_build)
 
 
 if __name__ == "__main__":

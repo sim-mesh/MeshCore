@@ -36,8 +36,8 @@ every program    RadioLib ── WholeFrameHal: one SPI.transfer per transaction
   meshcore-cli command lines in JSON, and prints `mchost: {json}` lines for
   acknowledgements and every message fetched.
 - `sim/driver.py`: the sim-mesh driver of all three, category `meshcore`.
-- `sim/make-zips`: builds the three environments and makes the firmware
-  zips.
+- `sim/make-zips`: builds the three environments for aarch64 and x86_64 and
+  makes the firmware zips.
 
 ## Building
 
@@ -50,14 +50,30 @@ loads neither.
 
 ```sh
 pio run -e sim_mesh_sx1262_repeater          # or _room, _companion: .pio/build/<env>/program
-variants/sim_mesh_sx1262/sim/make-zips       # all three zips, in .pio/sim-zips/
+variants/sim_mesh_sx1262/sim/make-zips       # all three, both architectures, in .pio/sim-zips/
 ```
 
-`make-zips` checks with `ldd` that a program loads only the C library, the
-C++ runtime and sim-mesh's radio, and fills the companion's `pylib/` with
-meshcore-cli, meshcore_py and their dependencies for CPython 3.12 (bleak
-left out: both import it inside a `try`), checked by importing meshcore-cli
-from it alone. Its Python needs pip; the zips go to sim-mesh with
+**Both architectures.** sim-mesh's pre-built firmware carries aarch64 and
+x86_64, so `make-zips` builds each role for both (`--arch` for one): the
+machine's own natively in `.pio/build/`, the other in
+`.pio/build.linux-<arch>/` with that architecture's cross g++
+(`g++-x86-64-linux-gnu` or `g++-aarch64-linux-gnu`) and its libc from
+Ubuntu's multiarch packages (`libc6-dev:amd64` or `:arm64`), as the spangap
+build image has them. `SIM_MESH_ARCH=<arch>` in pio's environment selects
+it: sim-mesh's `radio/portduino/cross.py` swaps in the cross tools, and its
+`link.py` compiles the radio with them into `radio/build.linux-<arch>/` and
+links that copy. By hand:
+
+```sh
+SIM_MESH_ARCH=x86_64 PLATFORMIO_BUILD_DIR=.pio/build.linux-x86_64 pio run -e sim_mesh_sx1262_repeater
+```
+
+`make-zips` checks with `readelf` that a program needs only the C library,
+the C++ runtime and sim-mesh's radio, and fills the companion's `pylib/`
+with meshcore-cli, meshcore_py and their dependencies for CPython 3.12 on
+the zip's architecture (bleak left out: both import it inside a `try`),
+checked, on the machine's own architecture, by importing meshcore-cli from
+it alone. Its Python needs pip; the zips go to sim-mesh with
 `sim firmware add <zip>`.
 
 ## Running one by hand
