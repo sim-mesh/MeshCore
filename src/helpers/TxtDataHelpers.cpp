@@ -1,5 +1,9 @@
 #include "TxtDataHelpers.h"
 
+#if defined(PORTDUINO_PLATFORM)
+  #include <itoa.h>   // ltoa(), which the C library here does not have
+#endif
+
 void StrHelper::strncpy(char* dest, const char* src, size_t buf_sz) {
   while (buf_sz > 1 && *src) {
     *dest++ = *src++;

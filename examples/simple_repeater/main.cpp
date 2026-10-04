@@ -81,6 +81,10 @@ void setup() {
   fs = &LittleFS;
   IdentityStore store(LittleFS, "/identity");
   store.begin();
+#elif defined(PORTDUINO_PLATFORM)
+  MeshFS.begin();
+  fs = &MeshFS;
+  IdentityStore store(MeshFS, "/identity");
 #else
   #error "need to define filesystem"
 #endif

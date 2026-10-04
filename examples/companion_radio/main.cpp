@@ -85,6 +85,8 @@ MultiSerialInterface interface_manager;
 #elif defined(ESP32)
   #include <SPIFFS.h>
   DataStore store(SPIFFS, rtc_clock);
+#elif defined(PORTDUINO_PLATFORM)
+  DataStore store(MeshFS, rtc_clock);
 #endif
 
 /* GLOBAL OBJECTS */
@@ -172,6 +174,16 @@ void setup() {
   );
 #elif defined(ESP32)
   SPIFFS.begin(true);
+  store.begin();
+  the_mesh.begin(
+    #ifdef DISPLAY_CLASS
+        disp != NULL
+    #else
+        false
+    #endif
+  );
+#elif defined(PORTDUINO_PLATFORM)
+  MeshFS.begin();
   store.begin();
   the_mesh.begin(
     #ifdef DISPLAY_CLASS

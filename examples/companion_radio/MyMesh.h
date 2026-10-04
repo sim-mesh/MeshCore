@@ -21,6 +21,8 @@
 #include <LittleFS.h>
 #elif defined(ESP32)
 #include <SPIFFS.h>
+#elif defined(PORTDUINO_PLATFORM)
+#include <helpers/portduino/PortduinoMeshFS.h>
 #endif
 
 #include "DataStore.h"

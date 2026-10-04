@@ -8,6 +8,9 @@
   #define FILESYSTEM  Adafruit_LittleFS
 
   using namespace Adafruit_LittleFS_Namespace;
+#elif defined(PORTDUINO_PLATFORM)
+  #include <helpers/portduino/PortduinoMeshFS.h>
+  #define FILESYSTEM  PortduinoMeshFS
 #endif
 #include <Identity.h>
 

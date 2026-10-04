@@ -63,6 +63,10 @@ void setup() {
   SPIFFS.begin(true);
   fs = &SPIFFS;
   IdentityStore store(SPIFFS, "/identity");
+#elif defined(PORTDUINO_PLATFORM)
+  MeshFS.begin();
+  fs = &MeshFS;
+  IdentityStore store(MeshFS, "/identity");
 #else
   #error "need to define filesystem"
 #endif
