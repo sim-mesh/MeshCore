@@ -3,13 +3,13 @@ room server, category `meshcore`.
 
 ```
 repeater, room   sim-mesh ── framed RPC on the console ──► the firmware's own command line
-companion        sim-mesh ── framed RPC on the console ──► host.py ── meshcore-cli line ──► firmware
+companion        sim-mesh ── framed RPC on the console ──► host.py command ── companion protocol ──► firmware
 companion        host.py ── "mchost: {json}" lines ──► console_line ──► msg.status, msg.received
 ```
 
 Every verb is a command line: the repeater's and the room server's own CLI,
-or for the companion a meshcore-cli command its host runs on the one
-connection to the firmware, answering in JSON. The companion's host is a
+or for the companion a command of its host's, which the host carries out on
+its one connection to the firmware, answering in JSON. The companion's host is a
 second process of the station with its own id in the ether
 (node id + 1 000 000), and it reads the console.
 
@@ -88,7 +88,7 @@ class MeshCoreSim(MeshcoreDriver):
         return await self.rpc_query(station, line, timeout)
 
     async def cli(self, station, *args):
-        """The companion: one meshcore-cli command, its JSON reply parsed.
+        """The companion: one command of its host's, its JSON reply parsed.
         An error it reports is raised."""
         text = (await self.run(station, " ".join(shlex.quote(str(a)) for a in args))).strip()
         try:
@@ -142,9 +142,7 @@ class MeshCoreSim(MeshcoreDriver):
 
     async def current_radio(self, station):
         if self.companion:
-            got = await self.cli(station, "get", "radio")
-            return {"freq": got["radio_freq"], "bw": got["radio_bw"], "sf": got["radio_sf"],
-                    "cr": got["radio_cr"], "repeat": got.get("repeat", False)}
+            return await self.cli(station, "get", "radio")
         freq, bw, sf, cr = (await self.own(station, "get radio")).split(",")
         return {"freq": float(freq), "bw": float(bw), "sf": int(sf), "cr": int(cr)}
 
@@ -184,13 +182,8 @@ class MeshCoreSim(MeshcoreDriver):
 
     async def contacts(self, station):
         self.need_companion("contacts")
-        got = await self.cli(station, "contacts") or {}
-        out = []
-        for key, c in got.items():
-            plen = c.get("out_path_len", -1)
-            out.append((c.get("adv_name"), (c.get("public_key") or key)[:12],
-                        None if plen is None or plen < 0 else plen))
-        return out
+        return [(c["name"], c["key"][:12], None if c["path"] is None else len(c["path"]))
+                for c in await self.cli(station, "contacts")]
 
     async def msg(self, station, dest, text, mid):
         self.need_companion("msg")
@@ -199,13 +192,13 @@ class MeshCoreSim(MeshcoreDriver):
         except CommandError as err:
             self.msg_status(station, mid, "failed", str(err))
             return
-        if not sent or "expected_ack" not in sent:
+        if not isinstance(sent, dict) or "ack" not in sent:
             self.msg_status(station, mid, "failed", json.dumps(sent) if sent else "not sent")
             return
-        code = sent["expected_ack"]
+        code = sent["ack"]
         self.acks.setdefault(station.name, {})[code] = mid
         self.msg_status(station, mid, "sent")
-        wait = max(ACK_WAIT_MIN_S, ACK_WAIT_FACTOR * sent.get("suggested_timeout", 0) / 1000.0)
+        wait = max(ACK_WAIT_MIN_S, ACK_WAIT_FACTOR * sent.get("timeout_ms", 0) / 1000.0)
         station_name = station.name
 
         async def expire():
@@ -225,21 +218,10 @@ class MeshCoreSim(MeshcoreDriver):
         self.msg_status(station, mid, "sent")
 
     async def path(self, station, dest):
-        """From the contact's own record (`contacts`), as meshcore-cli's
-        `path` prints it: its hops' hash prefixes, [] for a neighbour, None
-        for flood."""
+        """The contact's own record of its path: its hops' hash prefixes in
+        hex, [] for a neighbour, None for flood."""
         self.need_companion("path")
-        got = await self.cli(station, "contacts") or {}
-        found = [c for c in got.values() if c.get("adv_name") == dest]
-        if not found:
-            raise CommandError("path: no contact %s" % dest)
-        c = found[0]
-        plen = c.get("out_path_len", -1)
-        if plen is None or plen < 0:
-            return None
-        width = 2 * (c.get("out_path_hash_mode", 0) + 1)
-        hops = c.get("out_path") or ""
-        return [hops[i * width:(i + 1) * width] for i in range(plen)]
+        return (await self.cli(station, "path", dest))["path"]
 
     async def reset_path(self, station, dest):
         self.need_companion("reset_path")

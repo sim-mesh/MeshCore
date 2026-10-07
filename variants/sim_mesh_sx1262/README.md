@@ -9,13 +9,13 @@ is built from, as its example's `FIRMWARE_VERSION` says it
 
 | Base | Example | The station's console |
 |---|---|---|
-| `meshcore-companion-sx1262-<release>` | `examples/companion_radio` | meshcore-cli, on the companion's protocol as on a desk, carried over TCP |
+| `meshcore-companion-sx1262-<release>` | `examples/companion_radio` | its host's own small command line, which speaks the companion's protocol to it over TCP |
 | `meshcore-repeater-sx1262-<release>` | `examples/simple_repeater` | the repeater's own command line |
 | `meshcore-room-sx1262-<release>` | `examples/simple_room_server` | the room server's own command line |
 
 ```
 repeater, room   console pty ◄──► program (SimConsole: framed RPC → handleCommand, the rest → line editor)
-companion        console pty ◄──► host.py ── meshcore_py, TCP <bind addr>:5000 ──► program (USB interface)
+companion        console pty ◄──► host.py ── companion protocol, TCP <bind addr>:5000 ──► program (USB interface)
 every program    RadioLib ── WholeFrameHal: one SPI.transfer per transaction ──► sim-mesh radio/portduino
 ```
 
@@ -33,10 +33,13 @@ every program    RadioLib ── WholeFrameHal: one SPI.transfer per transaction
 - `SimMeshBoard.*`: the boot banner's station lines (firmware, node id,
   bind address, ether, the board from `SIM_MESH_BOARD`).
 - `sim/host.py`: the companion's host, a second process of the station. It
-  starts the firmware, connects to it with meshcore_py, runs meshcore-cli's
-  interactive loop for a person at the console, answers framed RPC with
-  meshcore-cli command lines in JSON, and prints `mchost: {json}` lines for
-  acknowledgements and every message fetched.
+  starts the firmware and speaks the companion protocol to it itself, with
+  Python's standard library alone. Its commands (`help` lists them: `infos`,
+  `get radio`, `set name|radio|tx`, `advert`, `floodadv`, `contacts`, `msg`,
+  `chan`, `path`, `reset_path`) are the person's at the console's `> `
+  prompt, answered in text, and the driver's in framed RPC, answered in
+  JSON. It prints `mchost: {json}` lines for acknowledgements and every
+  message fetched.
 - `sim/driver.py`: the sim-mesh driver of all three, category `meshcore`.
 - `sim/make-zips`: builds the three environments and makes the firmware
   zips, for the machine's own architecture or the ones asked for.
@@ -76,12 +79,9 @@ SIM_MESH_ARCH=x86_64 PLATFORMIO_BUILD_DIR=.pio/build.linux-x86_64 pio run -e sim
 ```
 
 `make-zips` checks with `readelf` that a program needs only the C library,
-the C++ runtime and sim-mesh's radio, and fills the companion's `pylib/`
-with meshcore-cli, meshcore_py and their dependencies for CPython 3.12 on
-the zip's architecture (bleak left out: both import it inside a `try`),
-checked, on the machine's own architecture, by importing meshcore-cli from
-it alone. Its Python needs pip; the zips go to sim-mesh with
-`sim firmware add <zip>`.
+the C++ runtime and sim-mesh's radio, zips it stripped of its symbols and
+debug sections (the build in `.pio/build` keeps them), and adds the
+companion's `host.py`. The zips go to sim-mesh with `sim firmware add <zip>`.
 
 ## Running one by hand
 

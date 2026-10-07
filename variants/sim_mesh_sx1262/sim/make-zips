@@ -4,8 +4,7 @@
     variants/sim_mesh_sx1262/sim/make-zips [--out DIR] [--no-build] [--arch ARCH]... [ROLE ...]
 
 ROLE is companion, repeater or room (all three without). Run from the
-repository's root with PlatformIO on PATH and pip in the Python running it,
-the libuv and libi2c headers installed, and sim-mesh's clone beside this
+repository's root with PlatformIO on PATH, the libuv and libi2c headers installed, and sim-mesh's clone beside this
 repository. Every role is built for the machine's own architecture, in
 .pio/build; sim-mesh's radio library is built first when its clone has none
 yet. --arch builds another architecture too (aarch64, x86_64): with its
@@ -15,12 +14,11 @@ link.py which. Each build is `pio run -e sim_mesh_sx1262_<role>`; its
 program must need nothing beyond the C library, the C++ runtime and
 sim-mesh's radio (checked with readelf). Each zip is
 `<base>-<release>_<arch>_<UTC stamp>.zip` in DIR (default .pio/sim-zips),
-the release the role's example's FIRMWARE_VERSION (meshcore-repeater-sx1262-1.17.1),
-holding
-node.yaml, the program and driver.py; the companion's also holds host.py and
-pylib/, meshcore-cli and meshcore_py with their dependencies for CPython
-3.12, checked, for the machine's own architecture, by importing meshcore-cli
-from pylib alone.
+the release the role's example's FIRMWARE_VERSION
+(meshcore-repeater-sx1262-1.17.1), holding node.yaml, the program, stripped
+of its symbols and debug sections (by strip, or <arch>-linux-gnu-strip for
+another architecture), and driver.py; the companion's also holds host.py,
+which needs nothing beyond Python's standard library.
 """
 
 import argparse
@@ -43,17 +41,10 @@ ARCHES = ("aarch64", "x86_64")
 # Each role: its base before the release, its title, and the example whose
 # MyMesh.h says the release (FIRMWARE_VERSION).
 ROLES = {
-    "companion": ("meshcore-companion-sx1262", "MeshCore companion %s (meshcore-cli)",
-                  "companion_radio"),
+    "companion": ("meshcore-companion-sx1262", "MeshCore companion %s", "companion_radio"),
     "repeater": ("meshcore-repeater-sx1262", "MeshCore repeater %s", "simple_repeater"),
     "room": ("meshcore-room-sx1262", "MeshCore room server %s", "simple_room_server"),
 }
-
-# meshcore-cli and meshcore_py and everything they import, each named, so
-# bleak (which both import inside a try) and dbus-fast stay out.
-PYLIB = ["meshcore==2.3.15", "meshcore-cli==1.6.5", "prompt_toolkit", "wcwidth", "pyserial",
-         "pyserial-asyncio-fast", "pycryptodome", "pycayennelpp", "requests", "urllib3",
-         "certifi", "idna", "charset-normalizer"]
 
 
 def run(argv, **kwargs):
@@ -68,19 +59,6 @@ def check_needed(program):
     stray = [lib for lib in needed if not ALLOWED.match(lib)]
     if stray:
         sys.exit("%s needs %s, which sim-mesh does not provide" % (program, ", ".join(stray)))
-
-
-def fill_pylib(target, arch):
-    run([sys.executable, "-m", "pip", "install", "--quiet", "--target", target,
-         "--only-binary=:all:", "--python-version", "3.12", "--implementation", "cp",
-         "--platform", "manylinux2014_%s" % arch, "--no-deps"] + PYLIB)
-    for junk in os.listdir(target):
-        if junk == "bin":
-            shutil.rmtree(os.path.join(target, junk))
-    if arch != platform.machine():
-        return
-    probe = "import meshcore_cli.meshcore_cli, meshcore, prompt_toolkit"
-    run(["/usr/bin/python3", "-S", "-c", probe], env={"PYTHONPATH": target, "PATH": "/usr/bin"})
 
 
 def release(role):
@@ -106,8 +84,6 @@ def node_yaml(role, base, arch, stamp):
         "exec: %s" % ("host.py" if role == "companion" else "program"),
         "driver: driver.py",
     ]
-    if role == "companion":
-        lines += ["env:", "  PYTHONPATH: ./pylib"]
     return "\n".join(lines) + "\n"
 
 
@@ -137,21 +113,19 @@ def make(role, out_dir, stamp, arch, build):
 
     name = "%s_%s_%s" % (base, arch, stamp)
     with tempfile.TemporaryDirectory() as tmp:
+        strip = "strip" if arch == platform.machine() else "%s-linux-gnu-strip" % arch
+        run([strip, "--strip-all", "-o", os.path.join(tmp, "program"), program])
+        program = os.path.join(tmp, "program")
         files = {"node.yaml": None, "program": program,
                  "driver.py": os.path.join(HERE, "driver.py")}
         if role == "companion":
             files["host.py"] = os.path.join(HERE, "host.py")
-            fill_pylib(os.path.join(tmp, "pylib"), arch)
         zip_path = os.path.join(out_dir, name + ".zip")
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("node.yaml", node_yaml(role, base, arch, stamp))
             for member, source in files.items():
                 if source is not None:
                     zf.write(source, member)
-            for dirpath, _, names in os.walk(os.path.join(tmp, "pylib")):
-                for each in sorted(names):
-                    path = os.path.join(dirpath, each)
-                    zf.write(path, os.path.relpath(path, tmp))
     print(zip_path, flush=True)
     return zip_path
 
