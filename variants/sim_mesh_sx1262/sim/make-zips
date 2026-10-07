@@ -12,7 +12,9 @@ machine's own natively in .pio/build, the other with its cross g++
 link.py which. Each build is `pio run -e sim_mesh_sx1262_<role>`; its
 program must need nothing beyond the C library, the C++ runtime and
 sim-mesh's radio (checked with readelf). Each zip is
-`<base>_<arch>_<UTC stamp>.zip` in DIR (default .pio/sim-zips), holding
+`<base>-<release>_<arch>_<UTC stamp>.zip` in DIR (default .pio/sim-zips),
+the release the role's example's FIRMWARE_VERSION (meshcore-repeater-sx1262-1.17.1),
+holding
 node.yaml, the program and driver.py; the companion's also holds host.py and
 pylib/, meshcore-cli and meshcore_py with their dependencies for CPython
 3.12, checked, for the machine's own architecture, by importing meshcore-cli
@@ -35,10 +37,13 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 ALLOWED = re.compile(r"^(libc|libm|libstdc\+\+|libgcc_s|ld-linux[-\w]*|libsimradio-[\w-]+)\.so")
 ARCHES = ("aarch64", "x86_64")
 
+# Each role: its base before the release, its title, and the example whose
+# MyMesh.h says the release (FIRMWARE_VERSION).
 ROLES = {
-    "companion": ("meshcore-companion-sx1262", "MeshCore companion (meshcore-cli)"),
-    "repeater": ("meshcore-repeater-sx1262", "MeshCore repeater"),
-    "room": ("meshcore-room-sx1262", "MeshCore room server"),
+    "companion": ("meshcore-companion-sx1262", "MeshCore companion %s (meshcore-cli)",
+                  "companion_radio"),
+    "repeater": ("meshcore-repeater-sx1262", "MeshCore repeater %s", "simple_repeater"),
+    "room": ("meshcore-room-sx1262", "MeshCore room server %s", "simple_room_server"),
 }
 
 # meshcore-cli and meshcore_py and everything they import, each named, so
@@ -75,6 +80,17 @@ def fill_pylib(target, arch):
     run(["/usr/bin/python3", "-S", "-c", probe], env={"PYTHONPATH": target, "PATH": "/usr/bin"})
 
 
+def release(role):
+    """The role's MeshCore release, as its example's FIRMWARE_VERSION says
+    it, without the leading v: 1.17.1."""
+    path = os.path.join(ROOT, "examples", ROLES[role][2], "MyMesh.h")
+    with open(path, encoding="utf-8") as f:
+        found = re.search(r'#define\s+FIRMWARE_VERSION\s+"v?([0-9][^"]*)"', f.read())
+    if not found:
+        sys.exit("%s says no FIRMWARE_VERSION" % path)
+    return found.group(1)
+
+
 def node_yaml(role, base, arch, stamp):
     lines = [
         "base: %s" % base,
@@ -82,7 +98,7 @@ def node_yaml(role, base, arch, stamp):
         "version: '%s'" % stamp,
         "category: meshcore",
         "radio: sx1262",
-        "title: %s" % ROLES[role][1],
+        "title: %s" % (ROLES[role][1] % release(role)),
         "hardware: ESP32-S3",
         "exec: %s" % ("host.py" if role == "companion" else "program"),
         "driver: driver.py",
@@ -93,7 +109,7 @@ def node_yaml(role, base, arch, stamp):
 
 
 def make(role, out_dir, stamp, arch, build):
-    base = ROLES[role][0]
+    base = "%s-%s" % (ROLES[role][0], release(role))
     env_name = "sim_mesh_sx1262_%s" % role
     build_dir = os.path.join(ROOT, ".pio", "build" if arch == platform.machine()
                              else "build.linux-%s" % arch)

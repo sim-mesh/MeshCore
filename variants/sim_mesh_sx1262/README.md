@@ -3,13 +3,15 @@
 Three MeshCore firmwares as [sim-mesh](https://github.com/sim-mesh/sim-mesh)
 stations, each a Linux process on the Portduino platform
 (`src/helpers/portduino/`) driving sim-mesh's virtual SX1262 through
-MeshCore's own RadioLib driver:
+MeshCore's own RadioLib driver. Each base ends in the MeshCore release it
+is built from, as its example's `FIRMWARE_VERSION` says it
+(`meshcore-repeater-sx1262-1.17.1`):
 
 | Base | Example | The station's console |
 |---|---|---|
-| `meshcore-companion-sx1262` | `examples/companion_radio` | meshcore-cli, on the companion's protocol as on a desk, carried over TCP |
-| `meshcore-repeater-sx1262` | `examples/simple_repeater` | the repeater's own command line |
-| `meshcore-room-sx1262` | `examples/simple_room_server` | the room server's own command line |
+| `meshcore-companion-sx1262-<release>` | `examples/companion_radio` | meshcore-cli, on the companion's protocol as on a desk, carried over TCP |
+| `meshcore-repeater-sx1262-<release>` | `examples/simple_repeater` | the repeater's own command line |
+| `meshcore-room-sx1262-<release>` | `examples/simple_room_server` | the room server's own command line |
 
 ```
 repeater, room   console pty ◄──► program (SimConsole: framed RPC → handleCommand, the rest → line editor)
