@@ -38,30 +38,35 @@ every program    RadioLib ── WholeFrameHal: one SPI.transfer per transaction
   meshcore-cli command lines in JSON, and prints `mchost: {json}` lines for
   acknowledgements and every message fetched.
 - `sim/driver.py`: the sim-mesh driver of all three, category `meshcore`.
-- `sim/make-zips`: builds the three environments for aarch64 and x86_64 and
-  makes the firmware zips.
+- `sim/make-zips`: builds the three environments and makes the firmware
+  zips, for the machine's own architecture or the ones asked for.
+- `.github/workflows/build-sim-mesh-firmwares.yml`: the zips for x86_64 and
+  for aarch64, each on a runner of its own architecture.
 
 ## Building
 
-PlatformIO, and sim-mesh's clone beside this repository (`../sim-mesh`,
-whose `radio/build/` holds `libsimradio-sx1262.so` once sim-mesh has
-started, or `cmake -S ../sim-mesh/radio -B ../sim-mesh/radio/build && cmake
---build ../sim-mesh/radio/build`). Portduino's core needs the libuv and
+PlatformIO, and sim-mesh's clone beside this repository (`../sim-mesh`),
+whose radio library the program links. Portduino's core needs the libuv and
 libi2c headers (`libuv1-dev`, `libi2c-dev` on Ubuntu) though the program
-loads neither.
+loads neither. `make-zips` builds the radio library (`cmake`, into
+`../sim-mesh/radio/build/`) when the clone has none yet, then every role
+for this machine's architecture, then the zips:
 
 ```sh
 pio run -e sim_mesh_sx1262_repeater          # or _room, _companion: .pio/build/<env>/program
-variants/sim_mesh_sx1262/sim/make-zips       # all three, both architectures, in .pio/sim-zips/
+variants/sim_mesh_sx1262/sim/make-zips       # all three, this machine's architecture, in .pio/sim-zips/
 ```
 
-**Both architectures.** sim-mesh's pre-built firmware carries aarch64 and
-x86_64, so `make-zips` builds each role for both (`--arch` for one): the
-machine's own natively in `.pio/build/`, the other in
-`.pio/build.linux-<arch>/` with that architecture's cross g++
+sim-mesh's pre-built firmware carries aarch64 and x86_64, each built on a
+machine of its own architecture: `.github/workflows/build-sim-mesh-firmwares.yml`
+runs `make-zips` on an x86_64 and an arm64 runner and keeps the zips as
+artifacts.
+
+**Another architecture on the same machine.** `--arch` builds for another
+architecture than the machine's own (more than one `--arch` for several),
+in `.pio/build.linux-<arch>/`, with that architecture's cross g++
 (`g++-x86-64-linux-gnu` or `g++-aarch64-linux-gnu`) and its libc from
-Ubuntu's multiarch packages (`libc6-dev:amd64` or `:arm64`), as the spangap
-build image has them. `SIM_MESH_ARCH=<arch>` in pio's environment selects
+Ubuntu's multiarch packages (`libc6-dev:amd64` or `:arm64`). `SIM_MESH_ARCH=<arch>` in pio's environment selects
 it: sim-mesh's `radio/portduino/cross.py` swaps in the cross tools, and its
 `link.py` compiles the radio with them into `radio/build.linux-<arch>/` and
 links that copy. By hand:

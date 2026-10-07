@@ -1,0 +1,64 @@
+name: Build sim-mesh Firmwares
+
+# The companion, repeater and room server as sim-mesh stations
+# (variants/sim_mesh_sx1262), one zip per role and architecture, each
+# architecture built natively on a runner of its own: PlatformIO from
+# setup-build-environment, the libuv and libi2c headers Portduino's core
+# includes, sim-mesh's clone beside this repository for its radio, and
+# variants/sim_mesh_sx1262/sim/make-zips.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [sim-mesh]
+    paths:
+      - variants/sim_mesh_sx1262/**
+      - src/helpers/portduino/**
+      - .github/workflows/build-sim-mesh-firmwares.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: sim-mesh zips (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-24.04
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+
+      - name: Clone Repo
+        uses: actions/checkout@v6
+
+      - name: Setup Build Environment
+        uses: ./.github/actions/setup-build-environment
+
+      - name: Install Portduino Headers
+        run: sudo apt-get update && sudo apt-get install -y libuv1-dev libi2c-dev
+
+      # A checkout stays inside the workspace; the variant takes sim-mesh from
+      # beside this repository, so it is moved there.
+      - name: Clone sim-mesh
+        uses: actions/checkout@v6
+        with:
+          repository: sim-mesh/sim-mesh
+          path: .sim-mesh
+
+      - name: Put sim-mesh beside this Repo
+        run: mv .sim-mesh ../sim-mesh
+
+      - name: Build Zips
+        run: python variants/sim_mesh_sx1262/sim/make-zips --out sim-zips
+
+      - name: Upload Workflow Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: sim-mesh-${{ matrix.arch }}
+          path: sim-zips/*.zip
+          if-no-files-found: error
